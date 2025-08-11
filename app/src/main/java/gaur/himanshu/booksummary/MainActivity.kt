@@ -15,8 +15,7 @@ import gaur.himanshu.booksummary.ui.theme.BookSummaryTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val fileManager by lazy { ScopeStorageManager(this) }
-
+    private val fileManager by lazy { FileManager(this) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -25,25 +24,10 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier
                     .safeContentPadding()
                     .fillMaxSize()) {
-                    MainScreen(fileManager = fileManager)
+                    MainScreen(fileManager)
                 }
             }
         }
     }
 }
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    BookSummaryTheme {
-        Greeting("Android")
-    }
-}

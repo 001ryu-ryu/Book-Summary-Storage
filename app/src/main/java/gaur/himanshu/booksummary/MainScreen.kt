@@ -58,12 +58,9 @@ import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-@OptIn(
-    ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class,
-    ExperimentalPermissionsApi::class
-)
+@OptIn(ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(fileManager: ScopeStorageManager) {
+fun MainScreen(fileManager: FileManager) {
     var uiState by remember { mutableStateOf(emptyList<Summary>()) }
 
     val sheetState = rememberModalBottomSheetState(initialValue = ModalBottomSheetValue.Hidden)
@@ -71,54 +68,19 @@ fun MainScreen(fileManager: ScopeStorageManager) {
     val isEdit = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val lifecycle = LocalLifecycleOwner.current
-
-    val uri = remember { mutableStateOf<Uri?>(null) }
-
-    LaunchedEffect(key1 = uri.value) {
-        fileManager.readSummaries(uri.value)
-            .flowWithLifecycle(lifecycle.lifecycle)
-            .collectLatest {
-                uiState = it
-            }
-    }
-
-    val permission = rememberMultiplePermissionsState(
-        listOf(
-            android.Manifest.permission.READ_EXTERNAL_STORAGE,
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        )
-    )
-
     var type by remember { mutableStateOf(Type.INTERNAL) }
 
+    val lifeCycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(key1 = sheetState) {
         if (sheetState.currentValue == ModalBottomSheetValue.Hidden) {
             summaryEdit.value = Summary("", "", Type.INTERNAL)
         }
     }
-    val context = LocalContext.current
 
-    val activityResult =
-        rememberLauncherForActivityResult(contract = ActivityResultContracts.StartActivityForResult()) {
-            it.data?.data?.let {folderUri->
-                context.contentResolver.takePersistableUriPermission(
-                    folderUri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-                uri.value = folderUri
-                fileManager.setUri(folderUri)
-            }
+    LaunchedEffect(key1 = fileManager.getSummariesAsFlow()) {
+        fileManager.getSummariesAsFlow().flowWithLifecycle(lifeCycleOwner.lifecycle).collect {
+            uiState = it
         }
-    LaunchedEffect(key1 = Unit) {
-        context.takePermission(version10 = {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            }
-            activityResult.launch(intent)
-        }, versionBelow10 = {
-            permission.launchMultiplePermissionRequest()
-        })
     }
 
     ModalBottomSheetLayout(
@@ -129,16 +91,16 @@ fun MainScreen(fileManager: ScopeStorageManager) {
                 type = type,
                 onTypeChanged = { type = it }) { title, desc ->
                 if (isEdit.value) {
-                    val summary = Summary(title, desc)
-                    val updatedList = fileManager.update(type, summary)
-                    uiState = updatedList
-
-                    summaryEdit.value = Summary("", "")
-                    isEdit.value = false
+                    fileManager.update(summaryEdit.value)
+                    summaryEdit.value = Summary("","")
                 } else {
-                    val summary = Summary(title, desc)
-                    val list = fileManager.save(type, summary)
-                    uiState = list
+                    val summary = Summary(
+                        fileName = title,
+                        summary = desc,
+                        type = type
+                    )
+
+                    uiState = fileManager.save(summary)
                 }
                 scope.launch { sheetState.hide() }
             }
@@ -147,18 +109,18 @@ fun MainScreen(fileManager: ScopeStorageManager) {
     ) {
 
         Scaffold(topBar = {
-            TopAppBar(title = { Text(text = "Notes App") }, actions = {
+            TopAppBar(title = { Text(text = "Book Summary App") }, actions = {
                 IconButton(onClick = {
                     scope.launch { sheetState.show() }
                 }) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null)
                 }
             })
-        }) {
+        }) {innerPadding ->
             if (uiState.isEmpty()) {
                 Box(
                     modifier = Modifier
-                        .padding(it)
+                        .padding(innerPadding)
                         .fillMaxSize(), contentAlignment = Alignment.Center
                 ) {
                     Text(text = "Nothing found")
@@ -167,7 +129,7 @@ fun MainScreen(fileManager: ScopeStorageManager) {
 
                 LazyColumn(
                     modifier = Modifier
-                        .padding(it)
+                        .padding(innerPadding)
                         .fillMaxSize()
                 ) {
 
@@ -205,8 +167,7 @@ fun MainScreen(fileManager: ScopeStorageManager) {
                                     )
                                 }
                                 IconButton(onClick = {
-                                    val list = fileManager.delete(it.type, it)
-                                    uiState = list
+                                    fileManager.delete(it)
                                 }) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
@@ -251,12 +212,12 @@ fun Form(
 
         OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = title.value, onValueChange = {
             title.value = it
-        }, singleLine = true, placeholder = { Text(text = "Title") })
+        }, singleLine = true, placeholder = { Text(text = "Book Name") })
         Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(modifier = Modifier.fillMaxWidth(), value = desc.value, onValueChange = {
             desc.value = it
-        }, singleLine = true, placeholder = { Text(text = "Description") })
+        }, singleLine = true, placeholder = { Text(text = "Summary") })
         Spacer(modifier = Modifier.height(8.dp))
 
 
@@ -293,19 +254,6 @@ fun Form(
             onClick = { onClick.invoke(title.value, desc.value) }) {
             Text(text = "Save")
         }
-    }
-
-}
-
-
-inline fun Context.takePermission(
-    version10: () -> Unit,
-    versionBelow10: () -> Unit
-) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        version10.invoke()
-    } else {
-        versionBelow10.invoke()
     }
 
 }
